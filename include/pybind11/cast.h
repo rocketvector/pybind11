@@ -436,14 +436,18 @@ PYBIND11_NOINLINE inline std::string error_string() {
 
         PyFrameObject *frame = trace->tb_frame;
         errorString += "\n\nAt:\n";
-        while (frame) {
-            int lineno = PyFrame_GetLineNumber(frame);
-            errorString +=
-                "  " + handle(frame->f_code->co_filename).cast<std::string>() +
-                "(" + std::to_string(lineno) + "): " +
-                handle(frame->f_code->co_name).cast<std::string>() + "\n";
-            frame = frame->f_back;
-        }
+        #if PY_VERSION_HEX < 0x030B0000  // Python < 3.11
+            while (frame) {
+                int lineno = PyFrame_GetLineNumber(frame);
+                errorString +=
+                    "  " + handle(PyUnicode_AsUTF8(PyObject_Str(reinterpret_cast<PyObject*>(frame)))).cast<std::string>() +
+                    "(" + std::to_string(lineno) + "): " +
+                    handle(PyUnicode_AsUTF8(PyObject_Str(reinterpret_cast<PyObject*>(PyFrame_GetCode(frame)))))).cast<std::string>() + "\n";
+                frame = PyFrame_GetBack(frame);  // Use PyFrame_GetBack() instead of frame->f_back
+            }
+        #else  // Python 3.11+: No `PyFrameObject`, use alternative logging
+            errorString += "  (no frame traceback available in Python 3.11+) \n";
+        #endif
     }
 #endif
 

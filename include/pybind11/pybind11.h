@@ -2043,15 +2043,24 @@ inline function get_type_overload(const void *this_ptr, const detail::type_info 
     /* Don't call dispatch code if invoked from overridden function.
        Unfortunately this doesn't work on PyPy. */
 #if !defined(PYPY_VERSION)
-    PyFrameObject *frame = PyThreadState_Get()->frame;
-    if (frame && (std::string) str(frame->f_code->co_name) == name &&
-        frame->f_code->co_argcount > 0) {
-        PyFrame_FastToLocals(frame);
-        PyObject *self_caller = PyDict_GetItem(
-            frame->f_locals, PyTuple_GET_ITEM(frame->f_code->co_varnames, 0));
-        if (self_caller == self.ptr())
-            return function();
-    }
+    #if PY_VERSION_HEX < 0x03090000  // Python < 3.9
+        PyFrameObject *frame = PyThreadState_Get()->frame;
+    #elif PY_VERSION_HEX < 0x030B0000  // Python 3.9, 3.10
+        PyFrameObject *frame = PyThreadState_Get()->cframe->current_frame;
+    #else  // Python 3.11+
+        PyFrameObject *frame = nullptr;
+    #endif
+
+    #if PY_VERSION_HEX < 0x030B0000  // Python < 3.11
+        if (frame && (std::string) str(frame->f_code->co_name) == name &&
+                frame->f_code->co_argcount > 0) {
+            PyFrame_FastToLocals(frame);
+            PyObject *self_caller = PyDict_GetItem(
+                frame->f_locals, PyTuple_GET_ITEM(frame->f_code->co_varnames, 0));
+            if (self_caller == self.ptr())
+                return function();
+        }
+    #endif  // Skip for Python 3.11+
 #else
     /* PyPy currently doesn't provide a detailed cpyext emulation of
        frame objects, so we have to emulate this using Python. This
